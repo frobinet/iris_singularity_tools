@@ -17,13 +17,13 @@ def die(msg: str, ex: Exception = None):
     L.error(msg, exc_info=ex)
     sys.exit(-1)
 
-
 try:
     import sshconf
 except ModuleNotFoundError:
     print(f"sshconf module not found. Attempting to install it for you...")
     subprocess.run(["pip3", "install", "sshconf"], check=True)
     import sshconf
+
 
 from dataclasses import dataclass
 
@@ -273,6 +273,12 @@ def setup_for_vscode_attach(salloc: SallocArgs, singularity: SingularityArgs):
 
 
 def convert_docker_to_sif(tag: str, source: str, sif_path: Path):
+    # Check that rsync is available
+    try:
+        # Check if rsync is available
+        exec_output_sync(["rsync", "--help"], exec_on_iris=False)
+    except:
+        die("rsync not available. Please install it.")
     tag_nospace =  tag.replace("/", "-").replace(":", "-").replace(" ", "-")
     def alloc_convert_node():
         L.info(f"Allocating node to convert image to SIF file")
@@ -290,7 +296,8 @@ def convert_docker_to_sif(tag: str, source: str, sif_path: Path):
             exec(["docker", "save", "-o", str(tar_image_path), tag], exec_on_iris=False)
         remote_tar_image_path = sif_path.parent / tar_image_path.name
         L.info(f"Uploading {tar_image_path} to HPC path {remote_tar_image_path}")
-        exec(["scp", str(tar_image_path), f"iris-cluster:{remote_tar_image_path}"], exec_on_iris=False, echo_command=False)
+        # exec(["scp", str(tar_image_path), f"iris-cluster:{remote_tar_image_path}"], exec_on_iris=False, echo_command=True)
+        exec(["rsync", "--partial", "--append", "--progress", str(tar_image_path), f"iris-cluster:{remote_tar_image_path}"], exec_on_iris=False, echo_command=True)
         job_id, allocated_node = alloc_convert_node()
         L.info(f"Converting {tar_image_path} to SIF file at {sif_path}")
         exec(["ssh", "-J", "iris-cluster", "-o", "StrictHostKeyChecking=no", allocated_node, "bash", "-l", "-c", f'"module load tools/Singularity && singularity build {sif_path} docker-archive://{remote_tar_image_path}"'], exec_on_iris=False)
